@@ -1,11 +1,13 @@
+"""Download DMI observations and write GeoParquet cache slices."""
+
 from __future__ import annotations
 
 import json
 import struct
+from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, timedelta
 from pathlib import Path
-from typing import Iterable
 
 import pandas as pd
 import pyarrow as pa
@@ -17,15 +19,55 @@ from dmi_geoparquet.partitioning import DMI_MAX_LIMIT, _fetch_dmi_features
 
 @dataclass(frozen=True)
 class CacheSlice:
+    """A closed-open cache interval.
+
+    Parameters
+    ----------
+    start
+        Inclusive start date.
+    end
+        Exclusive end date.
+    """
+
     start: date
     end: date
 
 
 def _parse_date(value: str) -> date:
+    """Parse an ISO 8601 date string.
+
+    Parameters
+    ----------
+    value
+        Date string in ``YYYY-MM-DD`` format.
+
+    Returns
+    -------
+    datetime.date
+        Parsed date value.
+    """
+
     return date.fromisoformat(value)
 
 
 def iter_cache_slices(start: date, end: date, partition: str) -> list[CacheSlice]:
+    """Split a date range into cache-sized slices.
+
+    Parameters
+    ----------
+    start
+        Inclusive start date.
+    end
+        Exclusive end date.
+    partition
+        Slice size, one of ``daily``, ``weekly``, or ``monthly``.
+
+    Returns
+    -------
+    list[CacheSlice]
+        Ordered cache slices covering the input span.
+    """
+
     slices: list[CacheSlice] = []
     cursor = start
     while cursor < end:
@@ -44,19 +86,55 @@ def iter_cache_slices(start: date, end: date, partition: str) -> list[CacheSlice
 
 
 def _point_wkb(longitude: float | None, latitude: float | None) -> bytes | None:
+    """Encode a 2D point as WKB.
+
+    Parameters
+    ----------
+    longitude
+        Point longitude.
+    latitude
+        Point latitude.
+
+    Returns
+    -------
+    bytes or None
+        WKB-encoded point, or ``None`` when coordinates are missing.
+    """
+
     if longitude is None or latitude is None:
         return None
     return struct.pack("<bIdd", 1, 1, float(longitude), float(latitude))
 
 
 def _fetch_observation_rows(parameter_id: str, start: date, end: date) -> pd.DataFrame:
+    """Fetch and normalize one DMI parameter for a date slice.
+
+    Parameters
+    ----------
+    parameter_id
+        DMI parameter identifier.
+    start
+        Inclusive start date.
+    end
+        Exclusive end date.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Normalized observation rows.
+    """
+
     start_ts = f"{start.isoformat()}T00:00:00Z"
     end_ts = f"{end.isoformat()}T00:00:00Z"
     rows: list[dict[str, object]] = []
     for feature in _fetch_dmi_features(parameter_id, DMI_MAX_LIMIT, start_ts, end_ts):
         properties = feature.get("properties", {})
         geometry = feature.get("geometry", {})
-        coordinates = geometry.get("coordinates", [None, None]) if isinstance(geometry, dict) else [None, None]
+        coordinates = (
+            geometry.get("coordinates", [None, None])
+            if isinstance(geometry, dict)
+            else [None, None]
+        )
         longitude = coordinates[0] if len(coordinates) > 0 else None
         latitude = coordinates[1] if len(coordinates) > 1 else None
         if not isinstance(properties, dict):
@@ -87,6 +165,14 @@ def _fetch_observation_rows(parameter_id: str, start: date, end: date) -> pd.Dat
 
 
 def _geo_metadata() -> bytes:
+    """Build GeoParquet metadata for point geometries.
+
+    Returns
+    -------
+    bytes
+        JSON-encoded GeoParquet metadata.
+    """
+
     geo = {
         "version": "1.0.0",
         "primary_column": "geometry",
@@ -102,6 +188,16 @@ def _geo_metadata() -> bytes:
 
 
 def _write_geoparquet(df: pd.DataFrame, path: Path) -> None:
+    """Write a GeoParquet file to disk.
+
+    Parameters
+    ----------
+    df
+        DataFrame to serialize.
+    path
+        Output file path.
+    """
+
     table = pa.Table.from_pandas(df, preserve_index=False)
     metadata = dict(table.schema.metadata or {})
     metadata[b"geo"] = _geo_metadata()
@@ -118,6 +214,29 @@ def build_cache(
     partition_size: str = "monthly",
     overwrite: bool = False,
 ) -> list[Path]:
+    """Build GeoParquet cache slices from DMI observations.
+
+    Parameters
+    ----------
+    start
+        Inclusive start date in ``YYYY-MM-DD`` format.
+    end
+        Exclusive end date in ``YYYY-MM-DD`` format.
+    output_dir
+        Root directory for the cache.
+    parameters
+        DMI parameter identifiers to download.
+    partition_size
+        Cache slice size, one of ``daily``, ``weekly``, or ``monthly``.
+    overwrite
+        Overwrite existing files when ``True``.
+
+    Returns
+    -------
+    list[pathlib.Path]
+        The files written or skipped because they already existed.
+    """
+
     start_date = _parse_date(start)
     end_date = _parse_date(end)
     slices = iter_cache_slices(start_date, end_date, partition_size)
@@ -127,16 +246,28 @@ def build_cache(
     jobs = [(parameter_id, cache_slice) for parameter_id in parameters for cache_slice in slices]
     for parameter_id, cache_slice in tqdm(jobs, desc="Building cache", unit="slice"):
         if partition_size == "monthly":
-            partition_parts = [f"year={cache_slice.start.year}", f"month={cache_slice.start.month:02d}"]
+            partition_parts = [
+                f"year={cache_slice.start.year}",
+                f"month={cache_slice.start.month:02d}",
+            ]
         elif partition_size == "weekly":
-            partition_parts = [f"year={cache_slice.start.year}", f"week={cache_slice.start.isocalendar().week:02d}"]
+            partition_parts = [
+                f"year={cache_slice.start.year}",
+                f"week={cache_slice.start.isocalendar().week:02d}",
+            ]
         else:
             partition_parts = [
                 f"year={cache_slice.start.year}",
                 f"month={cache_slice.start.month:02d}",
                 f"day={cache_slice.start.day:02d}",
             ]
-        path = output_dir / parameter_id / partition_size / Path(*partition_parts) / "part-00000.parquet"
+        path = (
+            output_dir
+            / parameter_id
+            / partition_size
+            / Path(*partition_parts)
+            / "part-00000.parquet"
+        )
         if path.exists() and not overwrite:
             written.append(path)
             continue

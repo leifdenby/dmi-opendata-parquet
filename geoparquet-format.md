@@ -198,9 +198,7 @@ row_group_bboxes = {
 
 # Add to schema metadata (non-standard)
 schema = pa.schema([...])
-schema = schema.with_metadata({
-    b"row_group_bboxes": str(row_group_bboxes).encode()
-})
+schema = schema.with_metadata({b"row_group_bboxes": str(row_group_bboxes).encode()})
 
 # Write the file
 pq.write_table(table, "output.parquet", schema=schema)

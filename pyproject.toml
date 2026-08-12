@@ -12,6 +12,14 @@ dependencies = [
   "pandas>=2.0",
   "pyarrow>=15.0",
   "tqdm>=4.66",
+  "xarray>=2024.1",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pre-commit",
+  "ruff",
+  "ty",
 ]
 
 [project.scripts]
@@ -19,3 +27,21 @@ dmi-geoparquet = "dmi_geoparquet.cli:main"
 
 [tool.setuptools]
 packages = ["dmi_geoparquet"]
+
+[dependency-groups]
+dev = [
+  "pre-commit",
+  "ruff",
+  "ty",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+src = ["dmi_geoparquet"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "N"]
+
+[tool.ruff.format]
+quote-style = "double"
