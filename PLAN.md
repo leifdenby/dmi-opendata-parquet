@@ -142,6 +142,8 @@ Progress so far:
 - kept file-size estimation focused on the soft whole-file target
 - added fetch-time estimation from the same live DMI sample
 - consolidated storage and runtime planning into one planner CLI flow
+- added a `build-cache` CLI that writes GeoParquet cache files per variable and time slice
+- validated the cache builder on a two-month run with monthly slices
 
 ## Storage Layout
 Use a single dataset root with separate subfolders per resolution.

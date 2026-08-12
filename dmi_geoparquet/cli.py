@@ -4,6 +4,7 @@ import argparse
 import json
 from pathlib import Path
 
+from dmi_geoparquet.cache import build_cache
 from dmi_geoparquet.partitioning import build_sample_frame, default_sample_window, estimate_from_dmi, estimate_from_frame, estimate_from_parquet
 
 
@@ -21,7 +22,16 @@ def _build_parser() -> argparse.ArgumentParser:
     estimate.add_argument("--soft-min-mb", type=float, default=10.0)
     estimate.add_argument("--soft-max-mb", type=float, default=50.0)
     estimate.add_argument("--json", action="store_true", help="Emit JSON output")
+
+    cache = subparsers.add_parser("build-cache", help="Download DMI observations into GeoParquet cache slices")
+    cache.add_argument("--start", required=True, help="Inclusive start date (YYYY-MM-DD)")
+    cache.add_argument("--end", required=True, help="Exclusive end date (YYYY-MM-DD)")
+    cache.add_argument("--output", type=Path, default=Path("cache"), help="Cache output directory")
+    cache.add_argument("--parameters", nargs="+", default=["temp_dry", "temp_dew", "wind_speed"], help="DMI parameter IDs to cache")
+    cache.add_argument("--partition-size", choices=["daily", "weekly", "monthly"], default="monthly", help="Cache slice size")
+    cache.add_argument("--overwrite", action="store_true", help="Rewrite existing cache files")
     return parser
+
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -66,6 +76,18 @@ def main(argv: list[str] | None = None) -> int:
                 )
             for candidate in result["candidates"]:
                 print(f"{candidate['name']}: {candidate['estimated_mb']:.2f} MB")
+        return 0
+
+    if args.command == "build-cache":
+        paths = build_cache(
+            start=args.start,
+            end=args.end,
+            output_dir=args.output,
+            parameters=args.parameters,
+            partition_size=args.partition_size,
+            overwrite=args.overwrite,
+        )
+        print(f"written={len(paths)}")
         return 0
 
     return 1
