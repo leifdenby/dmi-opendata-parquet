@@ -7,8 +7,9 @@ import json
 from pathlib import Path
 from typing import Any, cast
 
-from dmi_geoparquet.cache import build_cache
-from dmi_geoparquet.partitioning import (
+from dmi_geoparquet.build import build_final_geoparquet
+from dmi_geoparquet.download import build_cache
+from dmi_geoparquet.estimate import (
     build_sample_frame,
     default_sample_window,
     estimate_from_dmi,
@@ -62,7 +63,12 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     cache.add_argument("--start", required=True, help="Inclusive start date (YYYY-MM-DD)")
     cache.add_argument("--end", required=True, help="Exclusive end date (YYYY-MM-DD)")
-    cache.add_argument("--output", type=Path, default=Path("cache"), help="Cache output directory")
+    cache.add_argument(
+        "--output",
+        type=Path,
+        default=Path("tmp") / "cache",
+        help="Cache output directory",
+    )
     cache.add_argument(
         "--parameters",
         nargs="+",
@@ -76,6 +82,18 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Cache slice size",
     )
     cache.add_argument("--overwrite", action="store_true", help="Rewrite existing cache files")
+
+    final = subparsers.add_parser(
+        "build-final", help="Convert cached observations into final GeoParquet files"
+    )
+    final.add_argument("--cache", type=Path, required=True, help="Cache root directory")
+    final.add_argument(
+        "--output",
+        type=Path,
+        default=Path("data") / "dmi",
+        help="Final output directory",
+    )
+    final.add_argument("--overwrite", action="store_true", help="Rewrite existing files")
 
     plot = subparsers.add_parser(
         "plot-timeseries", help="Create timeseries plots from cached GeoParquet data"
@@ -189,6 +207,15 @@ def main(argv: list[str] | None = None) -> int:
             variables=args.variables,
             start=args.start,
             end=args.end,
+        )
+        print(f"written={len(written)}")
+        return 0
+
+    if args.command == "build-final":
+        written = build_final_geoparquet(
+            cache_root=args.cache,
+            output_dir=args.output,
+            overwrite=args.overwrite,
         )
         print(f"written={len(written)}")
         return 0

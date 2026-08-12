@@ -19,6 +19,11 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
   "pre-commit",
+  "pytest",
+  "nbclient",
+  "nbformat",
+  "nbmake",
+  "ipykernel",
   "ruff",
   "ty",
 ]
@@ -27,13 +32,26 @@ dev = [
 dmi-geoparquet = "dmi_geoparquet.cli:main"
 
 [tool.setuptools]
-packages = ["dmi_geoparquet"]
+packages = [
+  "dmi_geoparquet",
+  "dmi_geoparquet.estimate",
+  "dmi_geoparquet.download",
+  "dmi_geoparquet.build",
+]
 
 [dependency-groups]
 dev = [
   "pre-commit",
+  "pytest",
+  "nbclient",
+  "nbformat",
+  "nbmake",
+  "ipykernel",
   "ruff",
   "ty",
+]
+viz = [
+    "ipykernel>=7.3.0",
 ]
 
 [tool.ruff]

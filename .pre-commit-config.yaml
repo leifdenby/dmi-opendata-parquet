@@ -22,3 +22,14 @@ repos:
         additional_dependencies:
           - ty
         types: [python]
+      - id: notebook-execution
+        name: notebook execution
+        entry: python -m pytest --nbmake notebooks/final_geoparquet_demo.ipynb
+        language: python
+        additional_dependencies:
+          - pytest
+          - nbmake
+          - nbclient
+          - nbformat
+          - ipykernel
+        files: ^notebooks/.*\.ipynb$
