@@ -140,6 +140,8 @@ Progress so far:
 - switched live sampling to a one-day window one year back by default
 - extrapolated rows/day, rows/month, and rows/year from the one-day sample
 - kept file-size estimation focused on the soft whole-file target
+- added fetch-time estimation from the same live DMI sample
+- consolidated storage and runtime planning into one planner CLI flow
 
 ## Storage Layout
 Use a single dataset root with separate subfolders per resolution.

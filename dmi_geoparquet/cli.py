@@ -57,6 +57,13 @@ def main(argv: list[str] | None = None) -> int:
                 print(
                     f"projection rows/day={projection['rows_per_day']:.1f} rows/month={projection['rows_per_month']:.1f} rows/year={projection['rows_per_year']:.1f}"
                 )
+            download_projection = result.get("download_projection")
+            if download_projection:
+                rows_per_second = download_projection.get("rows_per_second")
+                rows_per_second_text = f"{rows_per_second:.1f}" if rows_per_second is not None else "n/a"
+                print(
+                    f"fetch rows/sec={rows_per_second_text} seconds/day={download_projection['seconds_per_day']:.1f} seconds/month={download_projection['seconds_per_month']:.1f} seconds/year={download_projection['seconds_per_year']:.1f}"
+                )
             for candidate in result["candidates"]:
                 print(f"{candidate['name']}: {candidate['estimated_mb']:.2f} MB")
         return 0

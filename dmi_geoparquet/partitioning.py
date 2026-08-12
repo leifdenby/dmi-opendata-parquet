@@ -3,6 +3,7 @@ from __future__ import annotations
 import calendar
 from dataclasses import dataclass, asdict
 import json
+import time
 from collections.abc import Sequence
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -246,18 +247,21 @@ def estimate_from_dmi(
 ) -> dict[str, object]:
     if datetime_start is None or datetime_end is None:
         datetime_start, datetime_end = default_sample_window()
+    fetch_started_at = time.perf_counter()
     df = fetch_dmi_sample_frame(
         parameter_ids,
         limit=DMI_MAX_LIMIT,
         datetime_start=datetime_start,
         datetime_end=datetime_end,
     )
+    fetch_seconds = max(0.0, time.perf_counter() - fetch_started_at)
     result = estimate_from_frame(df, soft_min_mb=soft_min_mb, soft_max_mb=soft_max_mb)
     result["source"] = "dmi"
     result["parameters"] = list(parameter_ids)
     result["sample_rows"] = len(df)
     result["datetime_start"] = datetime_start
     result["datetime_end"] = datetime_end
+    result["fetch_seconds"] = fetch_seconds
     if not df.empty and "observed_at" in df.columns:
         observed = pd.to_datetime(df["observed_at"], utc=True, errors="coerce").dropna()
         if not observed.empty:
@@ -272,5 +276,12 @@ def estimate_from_dmi(
                 "rows_per_month": rows_per_day * sample_month_days,
                 "rows_per_year": rows_per_day * sample_year_days,
                 "sample_days": sample_days,
+            }
+            seconds_per_day = fetch_seconds / sample_days if sample_days else fetch_seconds
+            result["download_projection"] = {
+                "seconds_per_day": seconds_per_day,
+                "seconds_per_month": seconds_per_day * sample_month_days,
+                "seconds_per_year": seconds_per_day * sample_year_days,
+                "rows_per_second": len(df) / fetch_seconds if fetch_seconds > 0 else None,
             }
     return result
