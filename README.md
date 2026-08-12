@@ -1,64 +1,74 @@
 # DMI GeoParquet
 
-<svg width="900" height="170" viewBox="0 0 900 170" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Estimate, download, build workflow">
-  <defs>
-    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
-      <path d="M 0 0 L 10 5 L 0 10 z" fill="#334155" />
-    </marker>
-    <style>
-      .box { fill: #f8fafc; stroke: #334155; stroke-width: 2; rx: 14; ry: 14; }
-      .title { font: 700 22px sans-serif; fill: #0f172a; }
-      .body { font: 16px sans-serif; fill: #334155; }
-      .arrow { stroke: #334155; stroke-width: 3; fill: none; marker-end: url(#arrow); }
-    </style>
-  </defs>
+DMI GeoParquet turns DMI `metObs` weather-station observations into GeoParquet datasets.
 
-  <rect class="box" x="20" y="35" width="240" height="100"/>
-  <text class="title" x="140" y="68" text-anchor="middle">1. Estimate</text>
-  <text class="body" x="140" y="96" text-anchor="middle">sample DMI once</text>
-  <text class="body" x="140" y="118" text-anchor="middle">size + download plan</text>
+## Purpose
 
-  <rect class="box" x="330" y="35" width="240" height="100"/>
-  <text class="title" x="450" y="68" text-anchor="middle">2. Download</text>
-  <text class="body" x="450" y="96" text-anchor="middle">write cached GeoParquet</text>
-  <text class="body" x="450" y="118" text-anchor="middle">per variable and slice</text>
+The package exists to make DMI weather-station data easy to:
 
-  <rect class="box" x="640" y="35" width="240" height="100"/>
-  <text class="title" x="760" y="68" text-anchor="middle">3. Build</text>
-  <text class="body" x="760" y="96" text-anchor="middle">convert cache to final</text>
-  <text class="body" x="760" y="118" text-anchor="middle">GeoParquet dataset</text>
+- estimate before downloading
+- cache locally in a deterministic layout
+- build final partitioned GeoParquet outputs
+- open as `xarray.Dataset` for analysis and plotting
 
-  <path class="arrow" d="M 260 85 L 320 85"/>
-  <path class="arrow" d="M 570 85 L 630 85"/>
-</svg>
+## What It Does
 
-DMI GeoParquet is a small pipeline for turning DMI weather-station observations into GeoParquet datasets.
+- estimates partition sizes and fetch time from live DMI or local samples
+- downloads observations into per-variable GeoParquet cache slices
+- builds final GeoParquet partitions from the cache
+- provides a reader for cached GeoParquet data as `xarray`
+- provides a simple plotting helper for inspecting cached timeseries
 
-## Workflow
+Current scope:
 
-- `estimate-partitions`: sample DMI, estimate file sizes, and estimate fetch time.
-- `build-cache`: download observations into per-variable GeoParquet cache slices.
-- `build-final`: convert the cache into the final partitioned GeoParquet dataset.
-- `plot-timeseries`: inspect cached data as raw station-by-station timeseries plots.
+- DMI weather stations only
+- initial parameters: `temp_dry`, `temp_dew`, `wind_speed`
 
-## Current scope
+## How It Works
 
-- DMI weather stations only.
-- Initial variables:
-  - `temp_dry`
-  - `temp_dew`
-  - `wind_speed`
-- Cache slices are GeoParquet files.
-- Final dataset is written as partitioned GeoParquet.
+```mermaid
+flowchart LR
+  S["1. Estimate"]
+  DMI[(DMI backend)]
+  C["2. Download"]
+  F["3. Build"]
+  N[Notebook + plots]
 
-## Layout
+  DMI -->|observations| S
+  S -->|partition plan| C
+  C -->|cache slices| F
+  F -->|final GeoParquet| N
+```
+
+The pipeline is split into three stages:
+
+1. `estimate-partitions`
+   - samples DMI or local input
+   - estimates file sizes for candidate partition schemes
+   - estimates download time from the same sample
+
+2. `build-cache`
+   - downloads observations from the DMI API
+   - writes GeoParquet cache files per parameter and time slice
+   - uses a stable folder layout so runs are resumable and deterministic
+
+3. `build-final`
+   - reads the cache
+   - normalizes year/month partition columns
+   - writes the final partitioned GeoParquet dataset
+
+### Design
+
+- The code is organized into stage subpackages:
+  - `dmi_geoparquet.estimate`
+  - `dmi_geoparquet.download`
+  - `dmi_geoparquet.build`
+- The cache and final stages use `year` and `month` partition columns so output is predictable.
+- Each stage is kept separate so it can be tested and run independently.
+- The reader stays separate from the writers so analysis code does not depend on the download path.
+- The cache layout is intentionally simple and stable:
 
 ```text
-cache/
-  temp_dry/monthly/year=2025/month=07/part-00000.parquet
-  temp_dew/monthly/year=2025/month=07/part-00000.parquet
-  wind_speed/monthly/year=2025/month=07/part-00000.parquet
-
 tmp/
   cache/
     temp_dry/monthly/year=2025/month=07/part-00000.parquet
@@ -78,13 +88,20 @@ dmi-geoparquet build-final
 dmi-geoparquet plot-timeseries
 ```
 
+Defaults:
+
+- cache output: `tmp/cache`
+- plots output: `tmp/plots`
+- final output: `data/dmi`
+
 ## Python API
 
-- `dmi_geoparquet.open_dataset(...)` returns an `xarray.Dataset` from cached files.
+- `dmi_geoparquet.open_dataset(...)` opens cached GeoParquet as `xarray.Dataset`
+- `dmi_geoparquet.estimate` contains the estimation helpers
+- `dmi_geoparquet.download` contains the cache builder
+- `dmi_geoparquet.build` contains the final dataset builder
 
 ## Development
-
-Use `uv` for dependency management and command execution.
 
 ```bash
 uv sync --dev
