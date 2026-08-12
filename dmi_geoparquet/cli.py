@@ -15,6 +15,7 @@ from dmi_geoparquet.partitioning import (
     estimate_from_frame,
     estimate_from_parquet,
 )
+from dmi_geoparquet.plotting import plot_cache_timeseries
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -75,6 +76,22 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Cache slice size",
     )
     cache.add_argument("--overwrite", action="store_true", help="Rewrite existing cache files")
+
+    plot = subparsers.add_parser(
+        "plot-timeseries", help="Create timeseries plots from cached GeoParquet data"
+    )
+    plot.add_argument("--cache", type=Path, required=True, help="Cache root or Parquet file")
+    plot.add_argument(
+        "--output", type=Path, default=Path("tmp") / "plots", help="Plot output directory"
+    )
+    plot.add_argument("--start", help="Inclusive plot start timestamp (RFC3339)")
+    plot.add_argument("--end", help="Exclusive plot end timestamp (RFC3339)")
+    plot.add_argument(
+        "--variables",
+        nargs="+",
+        default=["air_temperature", "dew_point_temperature", "wind_speed"],
+        help="Plot variables to include",
+    )
     return parser
 
 
@@ -163,6 +180,17 @@ def main(argv: list[str] | None = None) -> int:
             overwrite=args.overwrite,
         )
         print(f"written={len(paths)}")
+        return 0
+
+    if args.command == "plot-timeseries":
+        written = plot_cache_timeseries(
+            cache_path=args.cache,
+            output_dir=args.output,
+            variables=args.variables,
+            start=args.start,
+            end=args.end,
+        )
+        print(f"written={len(written)}")
         return 0
 
     return 1
