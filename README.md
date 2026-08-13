@@ -88,6 +88,17 @@ dmi-geoparquet build-final
 dmi-geoparquet plot-timeseries
 ```
 
+Example full-year raw backfill:
+
+```bash
+uv run dmi-geoparquet build-final \
+  --cache tmp/cache \
+  --download-missing-data \
+  --start 2025-01-01 \
+  --end 2026-01-01 \
+  --output data/dmi
+```
+
 Defaults:
 
 - cache output: `tmp/cache`

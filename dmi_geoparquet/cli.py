@@ -87,6 +87,31 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     final.add_argument("--cache", type=Path, required=True, help="Cache root directory")
     final.add_argument(
+        "--download-missing-data",
+        action="store_true",
+        help="Download any missing cache data before building the final dataset",
+    )
+    final.add_argument(
+        "--start",
+        help="Inclusive start date to backfill when using --download-missing-data",
+    )
+    final.add_argument(
+        "--end",
+        help="Exclusive end date to backfill when using --download-missing-data",
+    )
+    final.add_argument(
+        "--parameters",
+        nargs="+",
+        default=["temp_dry", "temp_dew", "wind_speed"],
+        help="DMI parameter IDs to backfill when using --download-missing-data",
+    )
+    final.add_argument(
+        "--partition-size",
+        choices=["daily", "weekly", "monthly"],
+        default="monthly",
+        help="Cache slice size used when backfilling missing data",
+    )
+    final.add_argument(
         "--output",
         type=Path,
         default=Path("data") / "dmi",
@@ -211,6 +236,17 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.command == "build-final":
+        if args.download_missing_data:
+            if args.start is None or args.end is None:
+                parser.error("--start and --end are required with --download-missing-data")
+            build_cache(
+                start=args.start,
+                end=args.end,
+                output_dir=args.cache,
+                parameters=args.parameters,
+                partition_size=args.partition_size,
+                overwrite=False,
+            )
         written = build_final_geoparquet(
             cache_root=args.cache,
             output_dir=args.output,
