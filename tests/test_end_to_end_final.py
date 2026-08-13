@@ -6,8 +6,8 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 import pandas as pd
-from dmi_geoparquet.cache import build_cache
-from dmi_geoparquet.finalize import build_final_geoparquet
+from dmi_geoparquet.build import build_final_geoparquet
+from dmi_geoparquet.download import build_cache
 
 
 def _make_feature(
@@ -59,7 +59,7 @@ def test_final_dataset_row_count_matches_mocked_api(monkeypatch, tmp_path: Path)
         parameter_id = query["parameterId"][0]
         return {"features": features_by_parameter[parameter_id], "links": []}
 
-    monkeypatch.setattr("dmi_geoparquet.partitioning._fetch_json", fake_fetch_json)
+    monkeypatch.setattr("dmi_geoparquet.estimate.partitioning._fetch_json", fake_fetch_json)
 
     cache_root = tmp_path / "cache"
     final_root = tmp_path / "final"

@@ -2,4 +2,4 @@
 
 from __future__ import annotations
 
-from dmi_geoparquet.finalize import build_final_geoparquet as build_final_geoparquet
+from .finalize import build_final_geoparquet as build_final_geoparquet

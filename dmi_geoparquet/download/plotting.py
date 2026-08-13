@@ -13,22 +13,11 @@ import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
 import pandas as pd
 
-from dmi_geoparquet.xarray_reader import VARIABLE_SPECS, open_dataset
+from .xarray_reader import VARIABLE_SPECS, open_dataset
 
 
 def _variable_names(variables: Sequence[str] | None = None) -> list[str]:
-    """Return the plot variable names to render.
-
-    Parameters
-    ----------
-    variables
-        Optional list of variable names to plot.
-
-    Returns
-    -------
-    list[str]
-        Ordered variable names.
-    """
+    """Return the plot variable names to render."""
 
     if variables is not None:
         return list(variables)
@@ -36,35 +25,13 @@ def _variable_names(variables: Sequence[str] | None = None) -> list[str]:
 
 
 def _plot_label(name: str) -> str:
-    """Return a human-friendly label for a plot variable.
-
-    Parameters
-    ----------
-    name
-        Variable name.
-
-    Returns
-    -------
-    str
-        Display label.
-    """
+    """Return a human-friendly label for a plot variable."""
 
     return name.replace("_", " ").title()
 
 
 def _units_for(name: str) -> str:
-    """Return the CF units for a variable.
-
-    Parameters
-    ----------
-    name
-        Variable name.
-
-    Returns
-    -------
-    str
-        Units string.
-    """
+    """Return the CF units for a variable."""
 
     for spec in VARIABLE_SPECS:
         if spec.name == name:
@@ -73,18 +40,7 @@ def _units_for(name: str) -> str:
 
 
 def _default_window(frame: pd.DataFrame) -> tuple[pd.Timestamp, pd.Timestamp]:
-    """Return the default two-day window for plotting.
-
-    Parameters
-    ----------
-    frame
-        Observation table with a ``time`` column.
-
-    Returns
-    -------
-    tuple[pandas.Timestamp, pandas.Timestamp]
-        Inclusive start and exclusive end timestamps.
-    """
+    """Return the default two-day window for plotting."""
 
     times = pd.to_datetime(frame["time"], utc=True, errors="coerce").dropna()
     if times.empty:
@@ -99,22 +55,7 @@ def _time_window(
     start: str | None,
     end: str | None,
 ) -> tuple[pd.Timestamp, pd.Timestamp]:
-    """Resolve the plotting time window.
-
-    Parameters
-    ----------
-    frame
-        Observation table with a ``time`` column.
-    start
-        Optional ISO 8601 start timestamp.
-    end
-        Optional ISO 8601 end timestamp.
-
-    Returns
-    -------
-    tuple[pandas.Timestamp, pandas.Timestamp]
-        Inclusive start and exclusive end timestamps.
-    """
+    """Resolve the plotting time window."""
 
     if start is not None and end is not None:
         return pd.to_datetime(start, utc=True), pd.to_datetime(end, utc=True)
@@ -122,22 +63,7 @@ def _time_window(
 
 
 def _subset_window(frame: pd.DataFrame, start: pd.Timestamp, end: pd.Timestamp) -> pd.DataFrame:
-    """Subset the frame to the requested plotting window.
-
-    Parameters
-    ----------
-    frame
-        Observation table.
-    start
-        Inclusive start timestamp.
-    end
-        Exclusive end timestamp.
-
-    Returns
-    -------
-    pandas.DataFrame
-        Windowed observation table.
-    """
+    """Subset the frame to the requested plotting window."""
 
     windowed = frame.copy()
     windowed["time"] = pd.to_datetime(windowed["time"], utc=True, errors="coerce")
@@ -153,26 +79,7 @@ def plot_cache_timeseries(
     start: str | None = None,
     end: str | None = None,
 ) -> list[Path]:
-    """Render timeseries plots from a GeoParquet cache.
-
-    Parameters
-    ----------
-    cache_path
-        Cache root directory or a single Parquet file.
-    output_dir
-        Directory where plots should be written.
-    variables
-        Optional subset of variable names to plot.
-    start
-        Optional inclusive start timestamp.
-    end
-        Optional exclusive end timestamp.
-
-    Returns
-    -------
-    list[pathlib.Path]
-        Written plot files.
-    """
+    """Render timeseries plots from a GeoParquet cache."""
 
     dataset = open_dataset(cache_path)
     requested_variables = _variable_names(variables)

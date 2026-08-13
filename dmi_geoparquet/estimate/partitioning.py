@@ -5,16 +5,15 @@ from __future__ import annotations
 import calendar
 import json
 import time
-from collections.abc import Iterable, Sequence
+from collections.abc import Sequence
 from dataclasses import asdict, dataclass
 from datetime import date, datetime, timedelta, timezone
+from io import BytesIO
 from pathlib import Path
 from urllib.parse import urlencode
 from urllib.request import urlopen
 
 import pandas as pd
-import pyarrow as pa
-import pyarrow.parquet as pq
 
 
 @dataclass(frozen=True)
@@ -279,11 +278,12 @@ def fetch_dmi_sample_frame(
     Returns
     -------
     pandas.DataFrame
-        Wide frame with one row per station and observation time.
+        Wide sample frame with one row per station and observation time.
     """
 
     if datetime_start is None or datetime_end is None:
         datetime_start, datetime_end = default_sample_window()
+
     rows: list[dict[str, object]] = []
     for parameter_id in parameter_ids:
         for feature in _fetch_dmi_features(parameter_id, limit, datetime_start, datetime_end):
@@ -303,174 +303,67 @@ def fetch_dmi_sample_frame(
                     "station_id": properties.get("stationId"),
                     "parameter_id": properties.get("parameterId"),
                     "observed_at": properties.get("observed"),
+                    "created_at": properties.get("created"),
                     "value": properties.get("value"),
                     "latitude": latitude,
                     "longitude": longitude,
                 }
             )
 
-    if not rows:
-        return pd.DataFrame(
-            columns=[
-                "station_id",
-                "observed_at",
-                "temp_dry",
-                "temp_dew",
-                "wind_speed",
-                "latitude",
-                "longitude",
-            ]
-        )
-
     df = pd.DataFrame(rows)
-    df["observed_at"] = pd.to_datetime(df["observed_at"], utc=True, errors="coerce")
-    wide = (
-        df.pivot_table(
-            index=["station_id", "observed_at", "latitude", "longitude"],
-            columns="parameter_id",
-            values="value",
-            aggfunc="first",
-        )
-        .reset_index()
-        .sort_values(["station_id", "observed_at"])
-        .reset_index(drop=True)
-    )
-    wide["year"] = wide["observed_at"].dt.year
-    wide["month"] = wide["observed_at"].dt.month
-    wide["day"] = wide["observed_at"].dt.day
-    wide["week"] = wide["observed_at"].dt.isocalendar().week.astype("int32")
-    wide["station_bucket"] = pd.factorize(wide["station_id"])[0] % 8
-    return wide
-
-
-def _table_size_bytes(df: pd.DataFrame) -> int:
-    """Measure the compressed Parquet size of a DataFrame.
-
-    Parameters
-    ----------
-    df
-        Input frame.
-
-    Returns
-    -------
-    int
-        Compressed parquet size in bytes.
-    """
-
-    table = pa.Table.from_pandas(df, preserve_index=False)
-    sink = pa.BufferOutputStream()
-    pq.write_table(table, sink, compression="snappy")
-    return sink.getvalue().size
-
-
-def estimate_partition_sizes(
-    df: pd.DataFrame,
-    candidates: Iterable[PartitionCandidate] = DEFAULT_CANDIDATES,
-) -> list[PartitionEstimate]:
-    """Estimate per-partition file sizes for candidate layouts.
-
-    Parameters
-    ----------
-    df
-        Sample frame.
-    candidates
-        Partitioning strategies to evaluate.
-
-    Returns
-    -------
-    list[PartitionEstimate]
-        Estimates ordered by the input candidates.
-    """
-
     if df.empty:
-        return []
+        return df
 
-    observed = pd.to_datetime(df.get("observed_at"), utc=True, errors="coerce").dropna()
-    sample_start = observed.min().normalize() if not observed.empty else None
-    sample_days = (
-        max(
-            1,
-            int(
-                ((observed.max().normalize() + pd.Timedelta(days=1)) - sample_start).total_seconds()
-                // 86400
-            ),
-        )
-        if sample_start is not None
-        else 1
-    )
-
-    sample_bytes = _table_size_bytes(df)
-    bytes_per_day = max(1, int(sample_bytes / sample_days))
-    rows_per_day = max(1, int(len(df) / sample_days))
-
-    month_days = (
-        calendar.monthrange(sample_start.year, sample_start.month)[1]
-        if sample_start is not None
-        else 30
-    )
-    year_days = 366 if sample_start is not None and calendar.isleap(sample_start.year) else 365
-
-    estimates: list[PartitionEstimate] = []
-    for candidate in candidates:
-        partition_days = (
-            month_days if candidate.partition_days == "month" else int(candidate.partition_days)
-        )
-        size_bytes = int((bytes_per_day * partition_days) / candidate.split_factor)
-        estimates.append(
-            PartitionEstimate(
-                name=candidate.name,
-                rows=len(df),
-                estimated_bytes=size_bytes,
-                estimated_mb=size_bytes / (1024 * 1024),
-                projected_month_rows=rows_per_day * month_days,
-                projected_year_rows=rows_per_day * year_days,
-            )
-        )
-    return estimates
+    df["observed_at"] = pd.to_datetime(df["observed_at"], utc=True, errors="coerce")
+    df["created_at"] = pd.to_datetime(df["created_at"], utc=True, errors="coerce")
+    df["year"] = df["observed_at"].dt.year
+    df["month"] = df["observed_at"].dt.month
+    df["day"] = df["observed_at"].dt.day
+    df["week"] = df["observed_at"].dt.isocalendar().week.astype("int32")
+    df["station_bucket"] = pd.factorize(df["station_id"])[0] % 8
+    return df
 
 
-def choose_partition(
-    estimates: list[PartitionEstimate],
-    soft_min_mb: float = 10.0,
-    soft_max_mb: float = 50.0,
-) -> PartitionEstimate:
-    """Choose the best candidate for the soft file-size target.
+def _candidate_frame_columns(df: pd.DataFrame, candidate: PartitionCandidate) -> pd.DataFrame:
+    """Return the columns needed for a candidate estimate."""
 
-    Parameters
-    ----------
-    estimates
-        Candidate estimates.
-    soft_min_mb
-        Lower bound of the acceptable range.
-    soft_max_mb
-        Upper bound of the acceptable range.
+    columns = [column for column in candidate.columns if column in df.columns]
+    return df[columns].copy()
 
-    Returns
-    -------
-    PartitionEstimate
-        Selected candidate.
-    """
 
-    in_range = [e for e in estimates if soft_min_mb <= e.estimated_mb <= soft_max_mb]
-    if in_range:
-        return min(in_range, key=lambda e: abs(e.estimated_mb - (soft_min_mb + soft_max_mb) / 2))
-    below = [e for e in estimates if e.estimated_mb < soft_min_mb]
-    if below:
-        return max(below, key=lambda e: e.estimated_mb)
-    return min(estimates, key=lambda e: e.estimated_mb)
+def _estimate_candidate_bytes(frame: pd.DataFrame, candidate: PartitionCandidate) -> int:
+    """Estimate compressed bytes for a candidate partitioning layout."""
+
+    if frame.empty:
+        return 0
+    candidate_frame = _candidate_frame_columns(frame, candidate)
+    candidate_frame["_partition_key"] = candidate_frame.astype(str).agg("|".join, axis=1)
+    partition_count = max(1, candidate_frame["_partition_key"].nunique())
+    buffer = BytesIO()
+    frame.to_parquet(buffer, index=False)
+    sample_bytes = buffer.tell()
+    return int(sample_bytes * partition_count / max(1, len(frame)))
+
+
+def _candidate_distance(candidate: dict[str, object], target_mb: float) -> float:
+    """Return distance from the target size for a candidate estimate."""
+
+    estimated_mb = candidate["estimated_mb"]
+    assert isinstance(estimated_mb, (int, float))
+    return abs(float(estimated_mb) - target_mb)
 
 
 def estimate_from_frame(
-    df: pd.DataFrame,
+    frame: pd.DataFrame,
     soft_min_mb: float = 10.0,
     soft_max_mb: float = 50.0,
 ) -> dict[str, object]:
-    """Estimate partition choices from an in-memory frame.
+    """Estimate partition choices from a sample frame.
 
     Parameters
     ----------
-    df
-        Sample frame.
+    frame
+        Sample data frame.
     soft_min_mb
         Lower bound of the acceptable file size range.
     soft_max_mb
@@ -482,13 +375,25 @@ def estimate_from_frame(
         JSON-serializable estimate result.
     """
 
-    estimates = estimate_partition_sizes(df)
-    chosen = choose_partition(estimates, soft_min_mb=soft_min_mb, soft_max_mb=soft_max_mb)
+    candidates: list[dict[str, object]] = []
+    for candidate in DEFAULT_CANDIDATES:
+        estimated_bytes = _estimate_candidate_bytes(frame, candidate)
+        candidates.append(
+            {
+                "name": candidate.name,
+                "columns": list(candidate.columns),
+                "estimated_bytes": estimated_bytes,
+                "estimated_mb": estimated_bytes / (1024 * 1024),
+                "rows": len(frame),
+            }
+        )
+
+    target_mb = (soft_min_mb + soft_max_mb) / 2
+    chosen = min(candidates, key=lambda item: _candidate_distance(item, target_mb))
     return {
-        "soft_min_mb": soft_min_mb,
-        "soft_max_mb": soft_max_mb,
-        "chosen": chosen.to_dict(),
-        "candidates": [estimate.to_dict() for estimate in estimates],
+        "candidates": candidates,
+        "chosen": chosen,
+        "source": "frame",
     }
 
 

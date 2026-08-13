@@ -7,22 +7,11 @@ from pathlib import Path
 import pandas as pd
 from tqdm.auto import tqdm
 
-from dmi_geoparquet.cache import _write_geoparquet
+from ..download.cache import _write_geoparquet
 
 
 def _read_cache_files(cache_root: Path) -> pd.DataFrame:
-    """Read all cached GeoParquet files into a single frame.
-
-    Parameters
-    ----------
-    cache_root
-        Cache directory containing parquet files.
-
-    Returns
-    -------
-    pandas.DataFrame
-        Concatenated cache rows.
-    """
+    """Read all cached GeoParquet files into a single frame."""
 
     paths = sorted(cache_root.rglob("*.parquet"))
     if not paths:
@@ -33,18 +22,7 @@ def _read_cache_files(cache_root: Path) -> pd.DataFrame:
 
 
 def _ensure_temporal_columns(df: pd.DataFrame) -> pd.DataFrame:
-    """Ensure year and month columns exist on the frame.
-
-    Parameters
-    ----------
-    df
-        Input observation table.
-
-    Returns
-    -------
-    pandas.DataFrame
-        Frame with temporal partition columns.
-    """
+    """Ensure year and month columns exist on the frame."""
 
     frame = df.copy()
     frame["observed_at"] = pd.to_datetime(frame["observed_at"], utc=True, errors="coerce")
@@ -61,22 +39,7 @@ def build_final_geoparquet(
     output_dir: str | Path,
     overwrite: bool = False,
 ) -> list[Path]:
-    """Build the final raw GeoParquet dataset from the cache.
-
-    Parameters
-    ----------
-    cache_root
-        Root directory containing cached GeoParquet files.
-    output_dir
-        Final dataset output directory.
-    overwrite
-        Overwrite existing output files when ``True``.
-
-    Returns
-    -------
-    list[pathlib.Path]
-        Written output files.
-    """
+    """Build the final raw GeoParquet dataset from the cache."""
 
     cache_root = Path(cache_root)
     output_dir = Path(output_dir)

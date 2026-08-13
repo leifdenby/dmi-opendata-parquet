@@ -147,20 +147,7 @@ def _pivot_variables(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _to_kelvin(series: pd.Series, offset: float | None) -> pd.Series:
-    """Convert a series to Kelvin when an offset is supplied.
-
-    Parameters
-    ----------
-    series
-        Input numeric series.
-    offset
-        Offset to add to the values.
-
-    Returns
-    -------
-    pandas.Series
-        Converted values.
-    """
+    """Convert a series to Kelvin when an offset is supplied."""
 
     if offset is None:
         return series
@@ -168,18 +155,7 @@ def _to_kelvin(series: pd.Series, offset: float | None) -> pd.Series:
 
 
 def _attach_variable_attrs(dataset: xr.Dataset) -> xr.Dataset:
-    """Attach CF-style metadata to dataset variables and coordinates.
-
-    Parameters
-    ----------
-    dataset
-        Dataset to annotate.
-
-    Returns
-    -------
-    xarray.Dataset
-        Annotated dataset.
-    """
+    """Attach CF-style metadata to dataset variables and coordinates."""
 
     for spec in VARIABLE_SPECS:
         if spec.name in dataset:

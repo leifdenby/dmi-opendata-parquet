@@ -7,16 +7,15 @@ import json
 from pathlib import Path
 from typing import Any, cast
 
-from dmi_geoparquet.build import build_final_geoparquet
-from dmi_geoparquet.download import build_cache
-from dmi_geoparquet.estimate import (
+from .build import build_final_geoparquet
+from .download import build_cache, plot_cache_timeseries
+from .estimate import (
     build_sample_frame,
     default_sample_window,
     estimate_from_dmi,
     estimate_from_frame,
     estimate_from_parquet,
 )
-from dmi_geoparquet.plotting import plot_cache_timeseries
 
 
 def _build_parser() -> argparse.ArgumentParser:

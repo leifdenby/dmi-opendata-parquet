@@ -14,59 +14,25 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 from tqdm.auto import tqdm
 
-from dmi_geoparquet.partitioning import DMI_MAX_LIMIT, _fetch_dmi_features
+from ..estimate.partitioning import DMI_MAX_LIMIT, _fetch_dmi_features
 
 
 @dataclass(frozen=True)
 class CacheSlice:
-    """A closed-open cache interval.
-
-    Parameters
-    ----------
-    start
-        Inclusive start date.
-    end
-        Exclusive end date.
-    """
+    """A closed-open cache interval."""
 
     start: date
     end: date
 
 
 def _parse_date(value: str) -> date:
-    """Parse an ISO 8601 date string.
-
-    Parameters
-    ----------
-    value
-        Date string in ``YYYY-MM-DD`` format.
-
-    Returns
-    -------
-    datetime.date
-        Parsed date value.
-    """
+    """Parse an ISO 8601 date string."""
 
     return date.fromisoformat(value)
 
 
 def iter_cache_slices(start: date, end: date, partition: str) -> list[CacheSlice]:
-    """Split a date range into cache-sized slices.
-
-    Parameters
-    ----------
-    start
-        Inclusive start date.
-    end
-        Exclusive end date.
-    partition
-        Slice size, one of ``daily``, ``weekly``, or ``monthly``.
-
-    Returns
-    -------
-    list[CacheSlice]
-        Ordered cache slices covering the input span.
-    """
+    """Split a date range into cache-sized slices."""
 
     slices: list[CacheSlice] = []
     cursor = start
@@ -86,20 +52,7 @@ def iter_cache_slices(start: date, end: date, partition: str) -> list[CacheSlice
 
 
 def _point_wkb(longitude: float | None, latitude: float | None) -> bytes | None:
-    """Encode a 2D point as WKB.
-
-    Parameters
-    ----------
-    longitude
-        Point longitude.
-    latitude
-        Point latitude.
-
-    Returns
-    -------
-    bytes or None
-        WKB-encoded point, or ``None`` when coordinates are missing.
-    """
+    """Encode a 2D point as WKB."""
 
     if longitude is None or latitude is None:
         return None
@@ -107,22 +60,7 @@ def _point_wkb(longitude: float | None, latitude: float | None) -> bytes | None:
 
 
 def _fetch_observation_rows(parameter_id: str, start: date, end: date) -> pd.DataFrame:
-    """Fetch and normalize one DMI parameter for a date slice.
-
-    Parameters
-    ----------
-    parameter_id
-        DMI parameter identifier.
-    start
-        Inclusive start date.
-    end
-        Exclusive end date.
-
-    Returns
-    -------
-    pandas.DataFrame
-        Normalized observation rows.
-    """
+    """Fetch and normalize one DMI parameter for a date slice."""
 
     start_ts = f"{start.isoformat()}T00:00:00Z"
     end_ts = f"{end.isoformat()}T00:00:00Z"
@@ -165,13 +103,7 @@ def _fetch_observation_rows(parameter_id: str, start: date, end: date) -> pd.Dat
 
 
 def _geo_metadata() -> bytes:
-    """Build GeoParquet metadata for point geometries.
-
-    Returns
-    -------
-    bytes
-        JSON-encoded GeoParquet metadata.
-    """
+    """Build GeoParquet metadata for point geometries."""
 
     geo = {
         "version": "1.0.0",
@@ -188,15 +120,7 @@ def _geo_metadata() -> bytes:
 
 
 def _write_geoparquet(df: pd.DataFrame, path: Path) -> None:
-    """Write a GeoParquet file to disk.
-
-    Parameters
-    ----------
-    df
-        DataFrame to serialize.
-    path
-        Output file path.
-    """
+    """Write a GeoParquet file to disk."""
 
     table = pa.Table.from_pandas(df, preserve_index=False)
     metadata = dict(table.schema.metadata or {})
@@ -214,28 +138,7 @@ def build_cache(
     partition_size: str = "monthly",
     overwrite: bool = False,
 ) -> list[Path]:
-    """Build GeoParquet cache slices from DMI observations.
-
-    Parameters
-    ----------
-    start
-        Inclusive start date in ``YYYY-MM-DD`` format.
-    end
-        Exclusive end date in ``YYYY-MM-DD`` format.
-    output_dir
-        Root directory for the cache.
-    parameters
-        DMI parameter identifiers to download.
-    partition_size
-        Cache slice size, one of ``daily``, ``weekly``, or ``monthly``.
-    overwrite
-        Overwrite existing files when ``True``.
-
-    Returns
-    -------
-    list[pathlib.Path]
-        The files written or skipped because they already existed.
-    """
+    """Build GeoParquet cache slices from DMI observations."""
 
     start_date = _parse_date(start)
     end_date = _parse_date(end)
