@@ -107,14 +107,26 @@ Defaults:
 
 ## Docker Service
 
-`docker compose up -d --build` runs two services:
+`docker compose up -d --build` runs three services:
 
 - `updater` runs `dmi-geoparquet update` every 3 hours. Each cycle backfills missing
   monthly cache slices from `DMI_START_DATE`, re-downloads the slices covering the
   last 3 days (so late and new observations are picked up), and rebuilds `data/dmi`.
 - `server` (nginx) serves a status page at `http://localhost:8080/` and the dataset
-  below it with directory listings, HTTP Range requests and CORS, e.g.
-  `pd.read_parquet("http://localhost:8080/raw/year=2026/month=10/part-00000.parquet")`.
+  below it with directory listings, HTTP Range requests and CORS.
+- `s3-listing` answers S3 bucket listing requests, so the same files are also a
+  read-only, anonymous S3 bucket named `s3` (path-style, endpoint = the nginx
+  server). nginx serves object reads itself and forwards only bucket-level requests
+  (`/s3?list-type=2…`) to this service. With a bucket, pandas, pyarrow, DuckDB and
+  GeoPandas discover the `year=…/month=…` partitions themselves:
+
+```python
+df = pd.read_parquet(
+    "s3://s3/raw/",
+    storage_options={"anon": True, "endpoint_url": "http://localhost:8080"},
+    filters=[("year", "=", 2026), ("month", "=", 8)],
+)
+```
 
 The status page shows one row per month and one column per parameter, with each
 block marked `waiting`, `processing`, `done`, `no data` or `error`, plus a link to

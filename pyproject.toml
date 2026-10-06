@@ -38,6 +38,7 @@ packages = [
   "dmi_geoparquet.download",
   "dmi_geoparquet.build",
   "dmi_geoparquet.update",
+  "dmi_geoparquet.serve",
 ]
 
 [dependency-groups]

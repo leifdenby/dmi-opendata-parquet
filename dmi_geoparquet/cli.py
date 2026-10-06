@@ -17,6 +17,7 @@ from .estimate import (
     estimate_from_frame,
     estimate_from_parquet,
 )
+from .serve import make_server
 from .update import STATUS_FILENAME, StatusTracker, run_update_cycle, run_update_loop
 
 
@@ -146,6 +147,17 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     update.add_argument("--once", action="store_true", help="Run a single cycle and exit")
 
+    s3 = subparsers.add_parser(
+        "serve-s3-listing",
+        help="Answer S3 bucket listing requests for the final dataset directory",
+    )
+    s3.add_argument(
+        "--root", type=Path, default=Path("data") / "dmi", help="Directory exposed as the bucket"
+    )
+    s3.add_argument("--bucket", default="s3", help="Bucket name (first URL path segment)")
+    s3.add_argument("--host", default="0.0.0.0", help="Interface to bind")
+    s3.add_argument("--port", type=int, default=9000, help="Port to bind")
+
     plot = subparsers.add_parser(
         "plot-timeseries", help="Create timeseries plots from cached GeoParquet data"
     )
@@ -270,6 +282,12 @@ def main(argv: list[str] | None = None) -> int:
             cycle()
         else:
             run_update_loop(args.interval_hours, cycle, status=status)
+        return 0
+
+    if args.command == "serve-s3-listing":
+        server = make_server(args.root, args.bucket, args.host, args.port)
+        print(f"serving bucket {args.bucket!r} from {args.root} on {args.host}:{args.port}")
+        server.serve_forever()
         return 0
 
     if args.command == "plot-timeseries":

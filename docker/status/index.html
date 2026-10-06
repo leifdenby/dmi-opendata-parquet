@@ -49,6 +49,14 @@
   .err { color: var(--error); font-size: 12px; display: block; white-space: normal; max-width: 280px; }
   td a { color: inherit; }
   .notice { padding: 16px; color: var(--muted); }
+  h2 { font-size: 16px; margin: 32px 0 4px; }
+  .code { position: relative; background: var(--card); border: 1px solid var(--line); border-radius: 8px; }
+  .code pre { margin: 0; padding: 14px 16px; overflow-x: auto;
+              font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  .code button { position: absolute; top: 8px; right: 8px; font: inherit; font-size: 12px;
+                 padding: 3px 10px; border-radius: 6px; border: 1px solid var(--line);
+                 background: var(--bg); color: var(--fg); cursor: pointer; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 </style>
 </head>
 <body>
@@ -60,6 +68,17 @@
   <div class="cards" id="cards"></div>
   <div class="bar" id="bar"></div>
   <div class="wrap"><div class="notice" id="table">Loading status…</div></div>
+
+  <h2>Load the data with GeoPandas</h2>
+  <p class="sub">The dataset is also a read-only, anonymous S3 bucket named <code>s3</code> on this
+    server, so readers discover the <code>year=…/month=…</code> partitions themselves and only
+    download the months you filter on. Each row is one observation: <code>station_id</code>,
+    <code>parameter_id</code>, <code>observed_at</code>, <code>value</code> and the station's
+    <code>latitude</code>/<code>longitude</code>/<code>geometry</code>.</p>
+  <div class="code"><button class="copy" type="button" data-target="snippet-python">Copy</button><pre><code id="snippet-python"></code></pre></div>
+
+  <h2>…or query it with DuckDB</h2>
+  <div class="code"><button class="copy" type="button" data-target="snippet-duckdb">Copy</button><pre><code id="snippet-duckdb"></code></pre></div>
 </main>
 <script>
 const STATES = ["done", "processing", "waiting", "empty", "error"];
@@ -82,6 +101,89 @@ function rows(n) {
   return n == null ? "" : `<span class="meta">${Number(n).toLocaleString()} rows</span>`;
 }
 
+const PORT = location.port ? `:${location.port}` : "";
+const ENDPOINT = `http://spark-7f8f.lan${PORT}`;
+
+function pythonSnippet(year, month) {
+  return `import geopandas as gpd  # pip install geopandas pyarrow s3fs
+
+OPTS = {"anon": True, "endpoint_url": "${ENDPOINT}"}
+
+# One month: partition filters mean only matching files are downloaded
+gdf = gpd.read_parquet(
+    "s3://s3/raw/",
+    storage_options=OPTS,
+    filters=[("year", "=", ${year}), ("month", "=", ${month})],
+)
+print(gdf[["station_id", "parameter_id", "observed_at", "value", "geometry"]].head())
+
+# Everything built so far (~1M rows per month)
+gdf = gpd.read_parquet("s3://s3/raw/", storage_options=OPTS)
+
+# A GeoDataFrame is a pandas DataFrame, so the usual pandas operations work.
+# Daily mean air temperature at Copenhagen Airport (station 06180):
+temp = gdf[(gdf.parameter_id == "temp_dry") & (gdf.station_id == "06180")]
+print(temp.set_index("observed_at")["value"].resample("1D").mean().tail())
+
+# One column per parameter
+wide = gdf.pivot_table(
+    index=["station_id", "observed_at"], columns="parameter_id", values="value"
+)`;
+}
+
+function duckdbSnippet(year, month) {
+  return `import duckdb  # pip install duckdb
+
+con = duckdb.connect()
+con.execute("""
+    CREATE SECRET (TYPE s3, KEY_ID 'anon', SECRET 'anon',
+                   ENDPOINT 'spark-7f8f.lan${PORT}', URL_STYLE 'path', USE_SSL false)
+""")
+print(con.sql("""
+    SELECT station_id, parameter_id, avg(value) AS mean, count(*) AS n
+    FROM read_parquet('s3://s3/raw/*/*/*.parquet', hive_partitioning = true)
+    WHERE year = ${year} AND month = ${month}
+    GROUP BY ALL ORDER BY ALL
+"""))`;
+}
+
+function setText(id, text) {
+  const el = document.getElementById(id);
+  if (el.textContent !== text) el.textContent = text;
+}
+
+function renderSnippet(partitions) {
+  const done = Object.values(partitions).filter((p) => p.state === "done" && p.path);
+  const latest = done.map((p) => p.path).sort().pop() || "raw/year=2026/month=01/part-00000.parquet";
+  const [, year, month] = latest.match(/year=(\d+)\/month=(\d+)/);
+  setText("snippet-python", pythonSnippet(Number(year), Number(month)));
+  setText("snippet-duckdb", duckdbSnippet(Number(year), Number(month)));
+}
+
+document.querySelectorAll("button.copy").forEach((button) => button.addEventListener("click", async () => {
+  const text = document.getElementById(button.dataset.target).textContent;
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+    } else {
+      // The clipboard API needs HTTPS or localhost; fall back for plain-HTTP LAN hosts.
+      const area = document.createElement("textarea");
+      area.value = text;
+      area.style.position = "fixed";
+      area.style.opacity = "0";
+      document.body.appendChild(area);
+      area.select();
+      const ok = document.execCommand("copy");
+      area.remove();
+      if (!ok) throw new Error("copy rejected");
+    }
+    button.textContent = "Copied";
+  } catch {
+    button.textContent = "Copy failed";
+  }
+  setTimeout(() => { button.textContent = "Copy"; }, 1500);
+}));
+
 function render(status) {
   const blocks = Object.values(status.blocks || {});
   const counts = Object.fromEntries(STATES.map((s) => [s, 0]));
@@ -90,6 +192,7 @@ function render(status) {
   const partitions = status.partitions || {};
   const finals = Object.values(partitions);
   const finalsDone = finals.filter((f) => f.state === "done").length;
+  renderSnippet(partitions);
 
   document.getElementById("updated").textContent = `status updated ${ago(status.updated_at)}`;
   const cards = [
