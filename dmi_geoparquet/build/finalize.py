@@ -34,6 +34,70 @@ def _ensure_temporal_columns(df: pd.DataFrame) -> pd.DataFrame:
     return frame
 
 
+def final_partition_path(output_dir: str | Path, year: int, month: int) -> Path:
+    """Return the final GeoParquet path for one month.
+
+    Parameters
+    ----------
+    output_dir
+        Final dataset root.
+    year
+        Partition year.
+    month
+        Partition month.
+
+    Returns
+    -------
+    pathlib.Path
+        ``<output_dir>/raw/year=YYYY/month=MM/part-00000.parquet``.
+    """
+
+    return (
+        Path(output_dir) / "raw" / f"year={year:04d}" / f"month={month:02d}" / "part-00000.parquet"
+    )
+
+
+def build_final_partition(
+    cache_paths: list[Path],
+    output_dir: str | Path,
+    year: int,
+    month: int,
+) -> Path | None:
+    """Build the final GeoParquet file for one month from its cache files.
+
+    Rows observed outside the month are dropped so each observation lands in
+    exactly one partition.
+
+    Parameters
+    ----------
+    cache_paths
+        Cache files covering the month, typically one per parameter.
+    output_dir
+        Final dataset root.
+    year
+        Partition year.
+    month
+        Partition month.
+
+    Returns
+    -------
+    pathlib.Path or None
+        Written partition path, or ``None`` if the month has no observations.
+    """
+
+    if not cache_paths:
+        return None
+    frame = _ensure_temporal_columns(
+        pd.concat([pd.read_parquet(path) for path in cache_paths], ignore_index=True)
+    )
+    frame = frame[(frame["year"] == year) & (frame["month"] == month)]
+    if frame.empty:
+        return None
+    path = final_partition_path(output_dir, year, month)
+    _write_geoparquet(frame.drop(columns=["year", "month"], errors="ignore"), path)
+    return path
+
+
 def build_final_geoparquet(
     cache_root: str | Path,
     output_dir: str | Path,
@@ -54,13 +118,7 @@ def build_final_geoparquet(
         desc="Building final GeoParquet",
         unit="partition",
     ):
-        partition_path = (
-            output_dir
-            / "raw"
-            / f"year={int(year):04d}"
-            / f"month={int(month):02d}"
-            / "part-00000.parquet"
-        )
+        partition_path = final_partition_path(output_dir, int(year), int(month))
         if partition_path.exists() and not overwrite:
             written.append(partition_path)
             continue

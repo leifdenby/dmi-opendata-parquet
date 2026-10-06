@@ -105,6 +105,29 @@ Defaults:
 - plots output: `tmp/plots`
 - final output: `data/dmi`
 
+## Docker Service
+
+`docker compose up -d --build` runs two services:
+
+- `updater` runs `dmi-geoparquet update` every 3 hours. Each cycle backfills missing
+  monthly cache slices from `DMI_START_DATE`, re-downloads the slices covering the
+  last 3 days (so late and new observations are picked up), and rebuilds `data/dmi`.
+- `server` (nginx) serves a status page at `http://localhost:8080/` and the dataset
+  below it with directory listings, HTTP Range requests and CORS, e.g.
+  `pd.read_parquet("http://localhost:8080/raw/year=2026/month=10/part-00000.parquet")`.
+
+The status page shows one row per month and one column per parameter, with each
+block marked `waiting`, `processing`, `done`, `no data` or `error`, plus a link to
+the final file for that month. It polls `data/dmi/_status.json`, which the updater
+rewrites after every block, so the web server never waits on processing. A failed
+block is recorded with its error and the cycle continues with the remaining blocks.
+
+`./data` and `./tmp/cache` are bind-mounted, so downloads persist on the host across
+container restarts. The updater runs as the owner of `./data`, so written files keep
+your host user's ownership. Configure with `DMI_START_DATE`,
+`DMI_UPDATE_INTERVAL_HOURS` and `HTTP_PORT`. Run a single cycle locally with
+`uv run dmi-geoparquet update --start 2025-01-01 --once`.
+
 ## Python API
 
 - `dmi_geoparquet.open_dataset(...)` opens cached GeoParquet as `xarray.Dataset`

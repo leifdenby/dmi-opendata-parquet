@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import struct
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -127,7 +128,55 @@ def _write_geoparquet(df: pd.DataFrame, path: Path) -> None:
     metadata[b"geo"] = _geo_metadata()
     table = table.replace_schema_metadata(metadata)
     path.parent.mkdir(parents=True, exist_ok=True)
-    pq.write_table(table, path, compression="snappy")
+    # Write to a temporary sibling and rename so readers never see a partial file.
+    tmp_path = path.with_name(f".{path.name}.tmp")
+    pq.write_table(table, tmp_path, compression="snappy")
+    os.replace(tmp_path, path)
+
+
+def cache_slice_path(
+    output_dir: str | Path,
+    parameter_id: str,
+    cache_slice: CacheSlice,
+    partition_size: str = "monthly",
+) -> Path:
+    """Return the cache file path for one parameter and slice.
+
+    Parameters
+    ----------
+    output_dir
+        Cache root directory.
+    parameter_id
+        DMI parameter ID.
+    cache_slice
+        Slice whose start date determines the partition folder.
+    partition_size
+        One of ``daily``, ``weekly`` or ``monthly``.
+
+    Returns
+    -------
+    pathlib.Path
+        Path of the slice's GeoParquet cache file.
+    """
+
+    start = cache_slice.start
+    if partition_size == "monthly":
+        partition_parts = [f"year={start.year}", f"month={start.month:02d}"]
+    elif partition_size == "weekly":
+        partition_parts = [f"year={start.year}", f"week={start.isocalendar().week:02d}"]
+    else:
+        partition_parts = [
+            f"year={start.year}",
+            f"month={start.month:02d}",
+            f"day={start.day:02d}",
+        ]
+    return (
+        Path(output_dir)
+        / parameter_id
+        / partition_size
+        / Path(*partition_parts)
+        / "part-00000.parquet"
+    )
 
 
 def build_cache(
@@ -148,29 +197,7 @@ def build_cache(
 
     jobs = [(parameter_id, cache_slice) for parameter_id in parameters for cache_slice in slices]
     for parameter_id, cache_slice in tqdm(jobs, desc="Building cache", unit="slice"):
-        if partition_size == "monthly":
-            partition_parts = [
-                f"year={cache_slice.start.year}",
-                f"month={cache_slice.start.month:02d}",
-            ]
-        elif partition_size == "weekly":
-            partition_parts = [
-                f"year={cache_slice.start.year}",
-                f"week={cache_slice.start.isocalendar().week:02d}",
-            ]
-        else:
-            partition_parts = [
-                f"year={cache_slice.start.year}",
-                f"month={cache_slice.start.month:02d}",
-                f"day={cache_slice.start.day:02d}",
-            ]
-        path = (
-            output_dir
-            / parameter_id
-            / partition_size
-            / Path(*partition_parts)
-            / "part-00000.parquet"
-        )
+        path = cache_slice_path(output_dir, parameter_id, cache_slice, partition_size)
         if path.exists() and not overwrite:
             written.append(path)
             continue

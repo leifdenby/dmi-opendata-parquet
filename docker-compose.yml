@@ -1,0 +1,29 @@
+services:
+  updater:
+    build: .
+    environment:
+      TQDM_DISABLE: "1"
+    command:
+      - update
+      - --start
+      - "${DMI_START_DATE:-2025-01-01}"
+      - --interval-hours
+      - "${DMI_UPDATE_INTERVAL_HOURS:-3}"
+      - --cache
+      - /app/tmp/cache
+      - --output
+      - /app/data/dmi
+    volumes:
+      - ./data:/app/data
+      - ./tmp/cache:/app/tmp/cache
+    restart: unless-stopped
+
+  server:
+    image: nginx:1.27-alpine
+    ports:
+      - "${HTTP_PORT:-8080}:80"
+    volumes:
+      - ./data/dmi:/usr/share/nginx/html:ro
+      - ./docker/status:/usr/share/nginx/status:ro
+      - ./docker/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    restart: unless-stopped
