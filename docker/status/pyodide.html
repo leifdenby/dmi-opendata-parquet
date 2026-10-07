@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DMI GeoParquet in the browser</title>
+<style>
+  :root {
+    --bg: #f7f7f5; --fg: #1d1d1b; --muted: #6b6b66; --card: #ffffff; --line: #e2e2dd;
+    --accent: #1d5fa8; --accent-fg: #ffffff; --error: #b3261e; --error-bg: #fbe4e2;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #161615; --fg: #ececea; --muted: #9a9a94; --card: #1f1f1e; --line: #33332f;
+      --accent: #8ab8ec; --accent-fg: #10243a; --error: #f2948d; --error-bg: #3d1f1d;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg);
+         font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 1100px; margin: 0 auto; padding: 24px 16px 48px; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  h2 { font-size: 16px; margin: 24px 0 8px; }
+  .sub { color: var(--muted); margin: 0 0 16px; }
+  .sub a { color: inherit; }
+  code, textarea, pre { font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  textarea { width: 100%; min-height: 420px; padding: 14px 16px; resize: vertical; tab-size: 4;
+             background: var(--card); color: var(--fg); border: 1px solid var(--line); border-radius: 8px; }
+  .bar { display: flex; align-items: center; gap: 12px; margin: 12px 0; flex-wrap: wrap; }
+  button { font: inherit; font-weight: 600; padding: 6px 16px; border-radius: 6px; cursor: pointer;
+           border: 1px solid var(--accent); background: var(--accent); color: var(--accent-fg); }
+  button:disabled { opacity: 0.5; cursor: default; }
+  #state { color: var(--muted); }
+  pre { margin: 0; padding: 14px 16px; overflow-x: auto; white-space: pre; min-height: 3em;
+        background: var(--card); border: 1px solid var(--line); border-radius: 8px; }
+  pre.error { color: var(--error); background: var(--error-bg); }
+  #figures img { display: block; max-width: 100%; height: auto; margin: 0 0 12px;
+                 background: #fff; border: 1px solid var(--line); border-radius: 8px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>DMI GeoParquet in the browser</h1>
+  <p class="sub">Python running in your browser with <a href="https://pyodide.org">Pyodide</a>. The first
+    visit downloads about 30&nbsp;MB of packages from the jsDelivr CDN; later visits use the browser cache.
+    S3 clients don't run in browsers, so this reads the same files over plain HTTP from this server.
+    <a href="./">← status page</a></p>
+
+  <textarea id="code" spellcheck="false" aria-label="Python code"></textarea>
+  <div class="bar">
+    <button id="run" type="button" disabled>Run</button>
+    <span id="state">Loading Python…</span>
+  </div>
+
+  <h2>Output</h2>
+  <pre id="output"></pre>
+  <h2>Figures</h2>
+  <div id="figures"></div>
+</main>
+<script src="https://cdn.jsdelivr.net/pyodide/v314.0.7/full/pyodide.js"></script>
+<script>
+function example(year, month) {
+  return `from io import BytesIO
+
+import geopandas as gpd
+import matplotlib.pyplot as plt
+from pyodide.http import pyfetch
+
+
+async def read_month(year, month):
+    # The same files as s3://s3/raw/..., fetched over plain HTTP from this server
+    response = await pyfetch(f"raw/year={year}/month={month:02d}/part-00000.parquet")
+    return gpd.read_parquet(BytesIO(await response.bytes()))
+
+
+gdf = await read_month(${year}, ${month})
+print(f"{len(gdf):,} observations from {gdf.station_id.nunique()} stations")
+print(gdf[["station_id", "parameter_id", "observed_at", "value", "geometry"]].head())
+
+# Map: mean air temperature per station in Denmark
+temp = gdf[gdf.parameter_id == "temp_dry"].cx[7:16, 54:58]
+stations = gpd.GeoDataFrame(
+    temp.groupby("station_id").agg(value=("value", "mean"), geometry=("geometry", "first")),
+    crs="EPSG:4326",
+)
+fig, ax = plt.subplots(figsize=(6, 5))
+stations.plot(ax=ax, column="value", cmap="coolwarm", legend=True, markersize=30)
+ax.set_title("Mean air temperature, ${year}-${String(month).padStart(2, "0")} (°C)")
+
+# Timeseries: hourly air temperature at Copenhagen Airport
+cph = temp[temp.station_id == "06180"].set_index("observed_at")["value"]
+fig, ax = plt.subplots(figsize=(9, 3))
+cph.resample("1h").mean().plot(ax=ax)
+ax.set_title("Air temperature at Copenhagen Airport (06180)")
+ax.set_ylabel("°C")
+`;
+}
+
+const FIGURES_TO_PNG = `
+import base64, io, warnings
+import matplotlib.pyplot as plt
+
+def _figures_to_png():
+    images = []
+    for number in plt.get_fignums():
+        buffer = io.BytesIO()
+        with warnings.catch_warnings():
+            # Pyodide's matplotlib warns about float pixel offsets when exporting.
+            warnings.simplefilter("ignore")
+            plt.figure(number).savefig(buffer, format="png", dpi=100, bbox_inches="tight")
+        images.append(base64.b64encode(buffer.getvalue()).decode())
+    plt.close("all")
+    return images
+`;
+
+const codeEl = document.getElementById("code");
+const runEl = document.getElementById("run");
+const stateEl = document.getElementById("state");
+const outputEl = document.getElementById("output");
+const figuresEl = document.getElementById("figures");
+
+async function latestMonth() {
+  const params = new URLSearchParams(location.search);
+  if (params.get("year") && params.get("month")) {
+    return [Number(params.get("year")), Number(params.get("month"))];
+  }
+  try {
+    const status = await (await fetch("_status.json", { cache: "no-store" })).json();
+    const paths = Object.values(status.partitions || {})
+      .filter((p) => p.state === "done" && p.path).map((p) => p.path).sort();
+    const match = (paths.pop() || "").match(/year=(\d+)\/month=(\d+)/);
+    if (match) return [Number(match[1]), Number(match[2])];
+  } catch {}
+  const now = new Date();
+  return [now.getUTCFullYear(), now.getUTCMonth() + 1];
+}
+
+async function setup() {
+  const [year, month] = await latestMonth();
+  codeEl.value = example(year, month);
+  codeEl.style.height = `${codeEl.scrollHeight + 4}px`;
+
+  const started = performance.now();
+  const pyodide = await loadPyodide({ env: { MPLBACKEND: "AGG" } });
+  stateEl.textContent = "Loading pandas, pyarrow, geopandas and matplotlib…";
+  // geopandas' own dependency list includes fiona/GDAL (~11 MB), which reading
+  // GeoParquet does not need, so install it without dependencies.
+  await pyodide.loadPackage(["pandas", "pyarrow", "shapely", "pyproj", "matplotlib", "micropip"]);
+  await pyodide.pyimport("micropip").install("geopandas", { deps: false });
+  await pyodide.runPythonAsync(FIGURES_TO_PNG + "\nimport pandas as pd\npd.set_option('display.width', 160)\npd.set_option('display.max_columns', None)");
+  stateEl.textContent = `Ready (loaded in ${((performance.now() - started) / 1000).toFixed(0)} s).`;
+  runEl.disabled = false;
+
+  runEl.addEventListener("click", async () => {
+    runEl.disabled = true;
+    outputEl.textContent = "";
+    outputEl.classList.remove("error");
+    figuresEl.innerHTML = "";
+    stateEl.textContent = "Running…";
+    const append = (text) => { outputEl.textContent += text + "\n"; };
+    pyodide.setStdout({ batched: append });
+    pyodide.setStderr({ batched: append });
+    const t0 = performance.now();
+    try {
+      await pyodide.runPythonAsync(codeEl.value);
+      stateEl.textContent = `Finished in ${((performance.now() - t0) / 1000).toFixed(1)} s.`;
+    } catch (err) {
+      outputEl.classList.add("error");
+      append(String(err.message || err));
+      stateEl.textContent = "Failed.";
+    } finally {
+      const images = pyodide.globals.get("_figures_to_png")().toJs();
+      for (const png of images) {
+        const img = document.createElement("img");
+        img.alt = "Matplotlib figure";
+        img.src = `data:image/png;base64,${png}`;
+        figuresEl.appendChild(img);
+      }
+      runEl.disabled = false;
+    }
+  });
+}
+
+setup().catch((err) => {
+  stateEl.textContent = `Could not start Python: ${err.message || err}`;
+});
+</script>
+</body>
+</html>

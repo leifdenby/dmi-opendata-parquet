@@ -128,6 +128,11 @@ df = pd.read_parquet(
 )
 ```
 
+`/pyodide.html` runs a GeoPandas + matplotlib example in the browser with
+[Pyodide](https://pyodide.org), loaded from the jsDelivr CDN (about 30 MB on the first
+visit, then cached). It reads the same files over plain HTTP, because S3 clients don't
+run in browsers.
+
 The status page shows one row per month and one column per parameter, with each
 block marked `waiting`, `processing`, `done`, `no data` or `error`, plus a link to
 the final file for that month. It polls `data/dmi/_status.json`, which the updater
