@@ -117,7 +117,15 @@ def run_update_cycle(
         if final_path.exists():
             partition.update(path=final_path.relative_to(output_dir).as_posix())
             partition.update(file_summary(final_path))
-            if not pending:
+            # A cache file newer than the final file means an earlier cycle stopped
+            # between downloading and building, so rebuild it.
+            cache_paths = [
+                cache_slice_path(cache_root, parameter_id, cache_slice, "monthly")
+                for parameter_id in parameters
+            ]
+            final_mtime = final_path.stat().st_mtime
+            stale = any(c.exists() and c.stat().st_mtime > final_mtime for c in cache_paths)
+            if not pending and not stale:
                 partition["state"] = "done"
         partitions[period] = partition
         months.append((period, cache_slice, pending))

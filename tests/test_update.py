@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pandas as pd
+from dmi_geoparquet.download import build_cache
 from dmi_geoparquet.update import refresh_start_date, run_update_cycle, run_update_loop
 
 
@@ -163,3 +164,39 @@ def test_month_final_file_is_built_before_next_month_downloads(tmp_path: Path) -
         )
 
     assert july_final_seen_when_fetching_august == [True, True]
+
+
+def test_stale_final_file_is_rebuilt(tmp_path: Path) -> None:
+    """A final file older than its cache files is rebuilt on the next cycle."""
+
+    import os
+
+    cache_root = tmp_path / "cache"
+    output_root = tmp_path / "final"
+    kwargs = {
+        "start": "2025-07-01",
+        "cache_root": cache_root,
+        "output_dir": output_root,
+        "parameters": ["temp_dry"],
+        "today": date(2025, 9, 10),
+    }
+    target = "dmi_geoparquet.estimate.partitioning._fetch_json"
+    with patch(target, _fake_fetch_json_factory(15.0)):
+        run_update_cycle(**kwargs)
+
+    # Simulate a cycle interrupted after re-downloading July but before building it.
+    final = output_root / "raw" / "year=2025" / "month=07" / "part-00000.parquet"
+    with patch(target, _fake_fetch_json_factory(16.0)):
+        build_cache(
+            start="2025-07-01",
+            end="2025-08-01",
+            output_dir=cache_root,
+            parameters=["temp_dry"],
+            overwrite=True,
+        )
+    os.utime(final, (0, 0))
+
+    with patch(target, _fake_fetch_json_factory(16.0)):
+        run_update_cycle(**kwargs)
+
+    assert pd.read_parquet(final)["value"].tolist() == [16.0]
