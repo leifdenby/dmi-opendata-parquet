@@ -158,7 +158,10 @@ const ENDPOINT = location.origin;
 const USE_SSL = location.protocol === "https:";
 
 function pythonSnippet(year, month) {
-  return `import geopandas as gpd  # pip install geopandas pyarrow s3fs
+  return `# pip install geopandas pyarrow s3fs
+# or, without installing anything, open a notebook and paste this into it:
+#   uvx --with geopandas,pyarrow,s3fs,matplotlib,cartopy jupyter notebook
+import geopandas as gpd
 
 OPTS = {"anon": True, "endpoint_url": "${ENDPOINT}"}
 
