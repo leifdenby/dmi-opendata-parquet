@@ -170,7 +170,7 @@ def final_dataset_root(tmp_path_factory: pytest.TempPathFactory) -> Path:
     """Build and return a final GeoParquet dataset for notebook tests."""
 
     cache_root = tmp_path_factory.mktemp("cache")
-    final_root = Path("data") / "dmi"
+    final_root = tmp_path_factory.mktemp("final")
     with patch("dmi_geoparquet.estimate.partitioning._fetch_json", _fake_fetch_json_factory()):
         build_cache(
             start="2025-07-01",

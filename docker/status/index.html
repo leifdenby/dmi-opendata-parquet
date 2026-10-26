@@ -1,0 +1,343 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DMI GeoParquet</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.2/styles/github.min.css" media="(prefers-color-scheme: light)">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.2/styles/github-dark.min.css" media="(prefers-color-scheme: dark)">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.2/highlight.min.js"></script>
+<style>
+  :root {
+    --bg: #f7f7f5; --fg: #1d1d1b; --muted: #6b6b66; --card: #ffffff; --line: #e2e2dd;
+    --done: #2e7d4f; --done-bg: #e3f2e8; --processing: #1d5fa8; --processing-bg: #e1ecf8;
+    --waiting: #6b6b66; --waiting-bg: #ececea; --error: #b3261e; --error-bg: #fbe4e2;
+    --empty: #8a6d1d; --empty-bg: #f6efd9;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #161615; --fg: #ececea; --muted: #9a9a94; --card: #1f1f1e; --line: #33332f;
+      --done: #7fd19c; --done-bg: #1d3326; --processing: #8ab8ec; --processing-bg: #1b2a3d;
+      --waiting: #a5a5a0; --waiting-bg: #2a2a28; --error: #f2948d; --error-bg: #3d1f1d;
+      --empty: #e0c271; --empty-bg: #352e1a;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg);
+         font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 1100px; margin: 0 auto; padding: 24px 16px 48px; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sub { color: var(--muted); margin: 0 0 20px; }
+  .sub a { color: inherit; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+           gap: 12px; margin-bottom: 16px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 12px; }
+  .card .k { color: var(--muted); font-size: 12px; }
+  .card .v { font-size: 18px; font-variant-numeric: tabular-nums; }
+  .bar { height: 8px; border-radius: 4px; background: var(--waiting-bg); overflow: hidden;
+         display: flex; margin-bottom: 20px; }
+  .bar span { display: block; height: 100%; }
+  .wrap { overflow-x: auto; background: var(--card); border: 1px solid var(--line); border-radius: 8px; }
+  table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+  th, td { padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th { font-size: 12px; color: var(--muted); font-weight: 600; position: sticky; top: 0; background: var(--card); }
+  tr:last-child td { border-bottom: 0; }
+  .badge { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 12px; font-weight: 600; }
+  .s-done { color: var(--done); background: var(--done-bg); }
+  .s-processing { color: var(--processing); background: var(--processing-bg); }
+  .s-waiting { color: var(--waiting); background: var(--waiting-bg); }
+  .s-error { color: var(--error); background: var(--error-bg); }
+  .s-empty { color: var(--empty); background: var(--empty-bg); }
+  .meta { color: var(--muted); font-size: 12px; margin-left: 6px; }
+  .err { color: var(--error); font-size: 12px; display: block; white-space: normal; max-width: 280px; }
+  td a { color: inherit; }
+  .notice { padding: 16px; color: var(--muted); }
+  h2 { font-size: 16px; margin: 32px 0 4px; }
+  .code { position: relative; background: var(--card); border: 1px solid var(--line); border-radius: 8px; }
+  .code pre { margin: 0; padding: 14px 16px; overflow-x: auto;
+              font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  .code pre code.hljs { padding: 0; background: transparent; overflow: visible; }
+  .code .actions { position: absolute; top: 8px; right: 8px; display: flex; gap: 6px; }
+  .code .actions a { font-size: 12px; padding: 3px 10px; border-radius: 6px; border: 1px solid var(--line);
+                     background: var(--bg); color: var(--fg); text-decoration: none; }
+  .code button { font: inherit; font-size: 12px;
+                 padding: 3px 10px; border-radius: 6px; border: 1px solid var(--line);
+                 background: var(--bg); color: var(--fg); cursor: pointer; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  .lead { font-size: 15px; max-width: 760px; margin: 0 0 20px; }
+  .intro { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px;
+           margin-bottom: 8px; }
+  .intro .card h3 { font-size: 13px; margin: 0 0 6px; }
+  .intro .card p, .intro .card ol, .intro .card ul { margin: 0; color: var(--muted); }
+  .intro .card ol, .intro .card ul { padding-left: 18px; }
+  .intro .card li + li { margin-top: 4px; }
+  .intro a, .lead a { color: inherit; }
+</style>
+</head>
+<body>
+<main>
+  <h1>DMI weather observations as GeoParquet</h1>
+  <p class="lead">Observations from the Danish Meteorological Institute's weather stations
+    (<span id="intro-parameters">air temperature, dew point and wind speed</span>), republished as
+    monthly <a href="https://geoparquet.org">GeoParquet</a> files that you can load straight into
+    GeoPandas, pandas or DuckDB. <span id="intro-coverage"></span></p>
+
+  <div class="intro">
+    <div class="card">
+      <h3>How it works</h3>
+      <ol>
+        <li>Every <span id="intro-interval">3</span> hours the updater downloads observations from
+          DMI's <a href="https://opendatadocs.dmi.govcloud.dk/">open data</a> metObs API, one
+          parameter and month at a time. The last few days are re-downloaded each run to pick up
+          late observations.</li>
+        <li>As soon as all parameters for a month are in, they are merged into that month's
+          GeoParquet file: one row per observation with the station's location as a point geometry.</li>
+        <li>The files are served from this server over HTTP(S) and as a read-only S3 bucket.
+          The table below shows the progress of each month.</li>
+      </ol>
+    </div>
+    <div class="card">
+      <h3>How to use it</h3>
+      <ul>
+        <li><strong>S3:</strong> endpoint <code id="intro-endpoint"></code>, bucket <code>s3</code>,
+          anonymous access, data under <code>s3://s3/raw/</code>, partitioned by
+          <code>year=…/month=…</code>. See the <a href="#examples">GeoPandas and DuckDB examples</a>.</li>
+        <li><strong>In the browser:</strong> <a id="intro-pyodide" href="pyodide.html">run Python with
+          maps and plots</a> without installing anything.</li>
+        <li><strong>Plain files:</strong> browse <a href="raw/">raw/</a> and download a month, e.g. with
+          <code>curl</code>; progress is in <a href="_status.json">_status.json</a>.</li>
+        <li>Data © DMI, <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>.</li>
+      </ul>
+    </div>
+  </div>
+
+  <h2>Processing status</h2>
+  <p class="sub">Each block is one parameter for one month; a month's file is built as soon as its
+    blocks finish. <span id="updated">loading…</span></p>
+  <div class="cards" id="cards"></div>
+  <div class="bar" id="bar"></div>
+  <div class="wrap"><div class="notice" id="table">Loading status…</div></div>
+
+  <h2 id="examples">Load the data with GeoPandas</h2>
+  <p class="sub">The dataset is also a read-only, anonymous S3 bucket named <code>s3</code> on this
+    server, so readers discover the <code>year=…/month=…</code> partitions themselves and only
+    download the months you filter on. Each row is one observation: <code>station_id</code>,
+    <code>parameter_id</code>, <code>observed_at</code>, <code>value</code> and the station's
+    <code>latitude</code>/<code>longitude</code>/<code>geometry</code>.</p>
+  <p class="sub">Or <a id="pyodide-link" href="pyodide.html">run a version of it in your browser with Pyodide</a>,
+    with maps and plots (it reads the same files over plain HTTP, since S3 clients don't run in browsers).</p>
+  <div class="code"><div class="actions"><a id="pyodide-button" href="pyodide.html">▶ Run in browser</a><button class="copy" type="button" data-target="snippet-python">Copy</button></div><pre><code id="snippet-python" class="language-python"></code></pre></div>
+
+  <h2>…or query it with DuckDB</h2>
+  <div class="code"><div class="actions"><button class="copy" type="button" data-target="snippet-duckdb">Copy</button></div><pre><code id="snippet-duckdb" class="language-python"></code></pre></div>
+</main>
+<script>
+const STATES = ["done", "processing", "waiting", "empty", "error"];
+const LABELS = { done: "done", processing: "processing", waiting: "waiting", empty: "no data", error: "error" };
+
+function esc(value) {
+  return String(value ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+}
+function ago(iso) {
+  if (!iso) return "—";
+  const s = Math.round((Date.now() - Date.parse(iso)) / 1000);
+  const abs = Math.abs(s);
+  const txt = abs < 90 ? `${abs}s` : abs < 5400 ? `${Math.round(abs / 60)}m` : `${(abs / 3600).toFixed(1)}h`;
+  return s >= 0 ? `${txt} ago` : `in ${txt}`;
+}
+function badge(state) {
+  return `<span class="badge s-${state}">${LABELS[state] ?? esc(state)}</span>`;
+}
+function rows(n) {
+  return n == null ? "" : `<span class="meta">${Number(n).toLocaleString()} rows</span>`;
+}
+
+// Use the address this page was opened with, so the examples work both on the LAN
+// and behind a reverse proxy such as Traefik.
+const ENDPOINT = location.origin;
+const USE_SSL = location.protocol === "https:";
+
+function pythonSnippet(year, month) {
+  return `# pip install geopandas pyarrow s3fs
+# or, without installing anything, open a notebook and paste this into it:
+#   uvx --with geopandas,pyarrow,s3fs,matplotlib,cartopy jupyter notebook
+import geopandas as gpd
+
+OPTS = {"anon": True, "endpoint_url": "${ENDPOINT}"}
+
+# One month: partition filters mean only matching files are downloaded
+gdf = gpd.read_parquet(
+    "s3://s3/raw/",
+    storage_options=OPTS,
+    filters=[("year", "=", ${year}), ("month", "=", ${month})],
+)
+print(gdf[["station_id", "parameter_id", "observed_at", "value", "geometry"]].head())
+
+# Everything built so far (~1M rows per month)
+gdf = gpd.read_parquet("s3://s3/raw/", storage_options=OPTS)
+
+# A GeoDataFrame is a pandas DataFrame, so the usual pandas operations work.
+# Daily mean air temperature at Copenhagen Airport (station 06180):
+temp = gdf[(gdf.parameter_id == "temp_dry") & (gdf.station_id == "06180")]
+print(temp.set_index("observed_at")["value"].resample("1D").mean().tail())
+
+# One column per parameter
+wide = gdf.pivot_table(
+    index=["station_id", "observed_at"], columns="parameter_id", values="value"
+)`;
+}
+
+function duckdbSnippet(year, month) {
+  return `import duckdb  # pip install duckdb
+
+con = duckdb.connect()
+con.execute("""
+    CREATE SECRET (TYPE s3, KEY_ID 'anon', SECRET 'anon',
+                   ENDPOINT '${location.host}', URL_STYLE 'path', USE_SSL ${USE_SSL})
+""")
+print(con.sql("""
+    SELECT station_id, parameter_id, avg(value) AS mean, count(*) AS n
+    FROM read_parquet('s3://s3/raw/*/*/*.parquet', hive_partitioning = true)
+    WHERE year = ${year} AND month = ${month}
+    GROUP BY ALL ORDER BY ALL
+"""))`;
+}
+
+function setText(id, text) {
+  const el = document.getElementById(id);
+  if (el.textContent === text) return;
+  el.textContent = text;
+  // Highlighting only wraps tokens in spans, so textContent (used by Copy) is unchanged.
+  if (window.hljs) {
+    delete el.dataset.highlighted;
+    hljs.highlightElement(el);
+  }
+}
+
+function renderSnippet(partitions) {
+  const done = Object.values(partitions).filter((p) => p.state === "done" && p.path);
+  const latest = done.map((p) => p.path).sort().pop() || "raw/year=2026/month=01/part-00000.parquet";
+  const [, year, month] = latest.match(/year=(\d+)\/month=(\d+)/);
+  setText("snippet-python", pythonSnippet(Number(year), Number(month)));
+  setText("snippet-duckdb", duckdbSnippet(Number(year), Number(month)));
+  const href = `pyodide.html?year=${Number(year)}&month=${Number(month)}`;
+  document.getElementById("pyodide-link").href = href;
+  document.getElementById("intro-pyodide").href = href;
+  document.getElementById("pyodide-button").href = href;
+}
+
+document.querySelectorAll("button.copy").forEach((button) => button.addEventListener("click", async () => {
+  const text = document.getElementById(button.dataset.target).textContent;
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+    } else {
+      // The clipboard API needs HTTPS or localhost; fall back for plain-HTTP LAN hosts.
+      const area = document.createElement("textarea");
+      area.value = text;
+      area.style.position = "fixed";
+      area.style.opacity = "0";
+      document.body.appendChild(area);
+      area.select();
+      const ok = document.execCommand("copy");
+      area.remove();
+      if (!ok) throw new Error("copy rejected");
+    }
+    button.textContent = "Copied";
+  } catch {
+    button.textContent = "Copy failed";
+  }
+  setTimeout(() => { button.textContent = "Copy"; }, 1500);
+}));
+
+const PARAMETER_NAMES = { temp_dry: "air temperature", temp_dew: "dew point", wind_speed: "wind speed" };
+
+function renderIntro(status) {
+  document.getElementById("intro-endpoint").textContent = ENDPOINT;
+  if (status.interval_hours) document.getElementById("intro-interval").textContent = status.interval_hours;
+  const names = (status.parameters || []).map((p) => PARAMETER_NAMES[p] || p);
+  if (names.length) {
+    document.getElementById("intro-parameters").textContent =
+      names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names.at(-1)}` : names[0];
+  }
+  const built = Object.entries(status.partitions || {}).filter(([, p]) => p.state === "done").sort();
+  if (built.length) {
+    const rowsTotal = built.reduce((sum, [, p]) => sum + (p.rows || 0), 0);
+    document.getElementById("intro-coverage").textContent =
+      `It currently covers ${built.length} months (${built[0][0]} to ${built.at(-1)[0]}), ` +
+      `${(rowsTotal / 1e6).toFixed(1)} million observations.`;
+  }
+}
+
+function render(status) {
+  renderIntro(status);
+  const blocks = Object.values(status.blocks || {});
+  const counts = Object.fromEntries(STATES.map((s) => [s, 0]));
+  blocks.forEach((b) => { counts[b.state] = (counts[b.state] || 0) + 1; });
+  const cycle = status.cycle || {};
+  const partitions = status.partitions || {};
+  const finals = Object.values(partitions);
+  const finalsDone = finals.filter((f) => f.state === "done").length;
+  renderSnippet(partitions);
+
+  document.getElementById("updated").textContent = `status updated ${ago(status.updated_at)}`;
+  const cards = [
+    ["Update cycle", cycle.state === "running" ? `running · started ${ago(cycle.started_at)}`
+      : `${cycle.state || "idle"} · finished ${ago(cycle.finished_at)}`],
+    ["Next run", status.next_run_at ? ago(status.next_run_at) : cycle.state === "running" ? "after this run" : "—"],
+    ["Final files", `${finalsDone} / ${finals.length}`],
+    ...STATES.map((s) => [LABELS[s], counts[s]]),
+  ];
+  document.getElementById("cards").innerHTML = cards
+    .map(([k, v]) => `<div class="card"><div class="k">${esc(k)}</div><div class="v">${esc(v)}</div></div>`)
+    .join("");
+  const total = blocks.length || 1;
+  document.getElementById("bar").innerHTML = STATES
+    .map((s) => `<span class="s-${s}" style="width:${(100 * counts[s]) / total}%;background:var(--${s})"></span>`)
+    .join("");
+
+  const params = status.parameters || [];
+  const periods = [...new Set(blocks.map((b) => b.period))].sort().reverse();
+  if (!periods.length) {
+    document.getElementById("table").outerHTML = `<div class="notice" id="table">No blocks yet.</div>`;
+    return;
+  }
+  const head = `<tr><th>Month</th>${params.map((p) => `<th>${esc(p)}</th>`).join("")}<th>Final file</th></tr>`;
+  const body = periods.map((period) => {
+    const cells = params.map((p) => {
+      const b = (status.blocks || {})[`${p}/${period}`];
+      if (!b) return "<td>—</td>";
+      const title = [b.modified_at && `file written ${b.modified_at}`, b.refresh && "refreshed every cycle"]
+        .filter(Boolean).join(" · ");
+      const err = b.state === "error" ? `<span class="err">${esc(b.error)}</span>` : "";
+      return `<td title="${esc(title)}">${badge(b.state)}${rows(b.rows)}${err}</td>`;
+    }).join("");
+    const part = partitions[period];
+    let final = "—";
+    if (part) {
+      const link = part.path
+        ? ` <a href="${esc(part.path)}">${esc(part.path.split("/").slice(-3, -1).join("/"))}</a>`
+        : "";
+      const err = part.state === "error" ? `<span class="err">${esc(part.error)}</span>` : "";
+      final = `${badge(part.state)}${link}${rows(part.rows)}${err}`;
+    }
+    return `<tr><td>${esc(period)}</td>${cells}<td>${final}</td></tr>`;
+  }).join("");
+  document.getElementById("table").outerHTML =
+    `<div id="table"><table><thead>${head}</thead><tbody>${body}</tbody></table></div>`;
+}
+
+async function refresh() {
+  try {
+    const response = await fetch("_status.json", { cache: "no-store" });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    render(await response.json());
+  } catch (err) {
+    document.getElementById("updated").textContent = `status unavailable (${err.message}) — the updater may not have started yet`;
+  }
+}
+refresh();
+setInterval(refresh, 5000);
+</script>
+</body>
+</html>

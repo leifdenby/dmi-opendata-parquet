@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 from pathlib import Path
 from typing import Any, cast
 
@@ -16,6 +17,8 @@ from .estimate import (
     estimate_from_frame,
     estimate_from_parquet,
 )
+from .serve import make_server
+from .update import STATUS_FILENAME, StatusTracker, run_update_cycle, run_update_loop
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -118,6 +121,42 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Final output directory",
     )
     final.add_argument("--overwrite", action="store_true", help="Rewrite existing files")
+
+    update = subparsers.add_parser(
+        "update", help="Periodically refresh the cache and rebuild the final dataset"
+    )
+    update.add_argument("--start", required=True, help="Inclusive backfill start (YYYY-MM-DD)")
+    update.add_argument("--cache", type=Path, default=Path("tmp") / "cache", help="Cache root")
+    update.add_argument(
+        "--output", type=Path, default=Path("data") / "dmi", help="Final output directory"
+    )
+    update.add_argument(
+        "--parameters",
+        nargs="+",
+        default=["temp_dry", "temp_dew", "wind_speed"],
+        help="DMI parameter IDs to download",
+    )
+    update.add_argument(
+        "--refresh-days",
+        type=int,
+        default=3,
+        help="Trailing days whose monthly cache slices are re-downloaded every cycle",
+    )
+    update.add_argument(
+        "--interval-hours", type=float, default=3.0, help="Hours between update cycles"
+    )
+    update.add_argument("--once", action="store_true", help="Run a single cycle and exit")
+
+    s3 = subparsers.add_parser(
+        "serve-s3-listing",
+        help="Answer S3 bucket listing requests for the final dataset directory",
+    )
+    s3.add_argument(
+        "--root", type=Path, default=Path("data") / "dmi", help="Directory exposed as the bucket"
+    )
+    s3.add_argument("--bucket", default="s3", help="Bucket name (first URL path segment)")
+    s3.add_argument("--host", default="0.0.0.0", help="Interface to bind")
+    s3.add_argument("--port", type=int, default=9000, help="Port to bind")
 
     plot = subparsers.add_parser(
         "plot-timeseries", help="Create timeseries plots from cached GeoParquet data"
@@ -222,6 +261,33 @@ def main(argv: list[str] | None = None) -> int:
             overwrite=args.overwrite,
         )
         print(f"written={len(paths)}")
+        return 0
+
+    if args.command == "update":
+        logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+        status = StatusTracker(args.output / STATUS_FILENAME)
+
+        def cycle() -> None:
+            written = run_update_cycle(
+                start=args.start,
+                cache_root=args.cache,
+                output_dir=args.output,
+                parameters=args.parameters,
+                refresh_days=args.refresh_days,
+                status=status,
+            )
+            logging.info("written=%d", len(written))
+
+        if args.once:
+            cycle()
+        else:
+            run_update_loop(args.interval_hours, cycle, status=status)
+        return 0
+
+    if args.command == "serve-s3-listing":
+        server = make_server(args.root, args.bucket, args.host, args.port)
+        print(f"serving bucket {args.bucket!r} from {args.root} on {args.host}:{args.port}")
+        server.serve_forever()
         return 0
 
     if args.command == "plot-timeseries":
