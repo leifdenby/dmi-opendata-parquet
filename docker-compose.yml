@@ -6,7 +6,7 @@ services:
     command:
       - update
       - --start
-      - "${DMI_START_DATE:-2025-01-01}"
+      - "${DMI_START_DATE:-2020-01-01}"
       - --interval-hours
       - "${DMI_UPDATE_INTERVAL_HOURS:-3}"
       - --cache
